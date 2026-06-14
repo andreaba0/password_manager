@@ -1,0 +1,6 @@
+[submodule "argon2_wasm/emsdk"]
+	path = argon2_wasm/emsdk
+	url = https://github.com/emscripten-core/emsdk.git
+[submodule "argon2_wasm/phc-winner-argon2"]
+	path = argon2_wasm/phc-winner-argon2
+	url = https://github.com/P-H-C/phc-winner-argon2.git
