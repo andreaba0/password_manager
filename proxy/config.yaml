@@ -1,0 +1,64 @@
+static_resources:
+    listeners:
+        - name: listener_0
+          address:
+              socket_address:
+                  address: 0.0.0.0
+                  port_value: 80
+          filter_chains:
+              - filters:
+                    - name: envoy.filters.network.http_connection_manager
+                      typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                          stat_prefix: ingress_http
+                          http_filters:
+                              - name: envoy.filters.http.router
+                                typed_config:
+                                    "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                          route_config:
+                              name: local_route
+                              virtual_hosts:
+                                  - name: local_service
+                                    domains: ["*"]
+                                    routes:
+                                        # Route /api/ and anything under it to backend_1
+                                        - match:
+                                              prefix: "/api/"
+                                          route:
+                                              cluster: api_server
+                                        # Catch-all route for all other paths to backend_2
+                                        - match:
+                                              prefix: "/"
+                                          route:
+                                              cluster: frontend_server
+
+    clusters:
+        - name: api_server
+          connect_timeout: 0.25s
+          type: LOGICAL_DNS
+          dns_lookup_family: V4_ONLY
+          lb_policy: ROUND_ROBIN
+          load_assignment:
+              cluster_name: api_server
+              endpoints:
+                  - lb_endpoints:
+                        - endpoint:
+                              address:
+                                  socket_address:
+                                      address: localhost # Replace with your backend 1 IP or hostname
+                                      port_value: 8080
+
+        - name: frontend_server
+          connect_timeout: 0.25s
+          type: LOGICAL_DNS
+          dns_lookup_family: V4_ONLY
+          lb_policy: ROUND_ROBIN
+          load_assignment:
+              cluster_name: frontend_server
+              endpoints:
+                  - lb_endpoints:
+                        - endpoint:
+                              address:
+                                  socket_address:
+                                      address: localhost # Replace with your backend 2 IP or hostname
+                                      port_value: 3000
