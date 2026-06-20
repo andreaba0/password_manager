@@ -40,3 +40,12 @@ func GenerateNonce() ([]byte, error) {
 
 	return nonce, nil
 }
+
+func GenerateSessionID() ([]byte, error) {
+	sessionID := make([]byte, 32)
+	_, err := rand.Read(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate session ID: %w", err)
+	}
+	return sessionID, nil
+}
