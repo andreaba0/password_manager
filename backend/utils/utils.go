@@ -11,7 +11,7 @@ import (
 	"os"
 )
 
-func DecodeRequest(r *http.Request, v interface{}) error {
+func DecodeRequest(r *http.Request, v any) error {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return err
