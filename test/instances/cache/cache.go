@@ -16,7 +16,7 @@ type CacheInstance struct {
 }
 
 // NewCacheInstance builds and starts the container without blocking on ready states.
-func NewCacheInstance(ctx context.Context, dockerfilePath string, networkName string) *CacheInstance {
+func NewCacheInstance() *CacheInstance {
 	return &CacheInstance{}
 }
 
