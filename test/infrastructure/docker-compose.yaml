@@ -48,6 +48,8 @@ services:
             - DB_NAME=test_db
             - VALKEY_HOST=valkey
             - VALKEY_PORT=6379
+            - SALT_SECRET=6cffbfeac8b2913f3c38f0d8b974a47f
+            - PUBLIC_KEY_CIPHER_KEY=e514469ffb02dfaa472fce6da2d89fa7
         networks:
             - integration_net
         depends_on:

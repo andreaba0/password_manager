@@ -49,3 +49,7 @@ func GenerateSessionID() ([]byte, error) {
 	}
 	return sessionID, nil
 }
+
+func IsProduction() bool {
+	return os.Getenv("ENV") == "production"
+}

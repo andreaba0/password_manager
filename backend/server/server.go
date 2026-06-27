@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"time"
 
-	"andreabarchietto.it/password_manager/backend/config"
 	keymanager "andreabarchietto.it/password_manager/backend/key_manager"
+	"andreabarchietto.it/password_manager/backend/kms"
 	"andreabarchietto.it/password_manager/backend/utils"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
@@ -22,7 +22,7 @@ type Server struct {
 	DB         *pgxpool.Pool
 	ValkeyDB   valkey.Client
 	KeyManager *keymanager.KeyManager
-	Config     *config.Config
+	kms        *kms.LocalKMS
 }
 
 type SignInFlowBeginRequest struct {
@@ -53,12 +53,6 @@ func (s *Server) SignInFlowBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionId, err := utils.GenerateSessionID()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
 	// Query database to get salt for user by email
 	// If user is not found, generate a salt from hmac-sha256(email, secret from env)
 	var salt []byte
@@ -71,7 +65,13 @@ func (s *Server) SignInFlowBegin(w http.ResponseWriter, r *http.Request) {
 		salt = utils.GenerateSaltFromEmail(req.Email)
 	}
 
-	key, id, err := s.KeyManager.GetEncryption()
+	id, key, err := s.KeyManager.GetSigningKey(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	sessionId, err := utils.GenerateSessionID()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -112,9 +112,9 @@ func (s *Server) SignInFlowBegin(w http.ResponseWriter, r *http.Request) {
 		Value:    tokenString,
 		Path:     "/",
 		Expires:  time.Now().Add(20 * time.Second),
-		HttpOnly: true,                          // Prevents JavaScript access (Mitigates XSS)
-		Secure:   s.Config.IsProduction == true, // Forces HTTPS transmission
-		SameSite: http.SameSiteStrictMode,       // Blocks Cross-Site Request Forgery (CSRF)
+		HttpOnly: true,                    // Prevents JavaScript access (Mitigates XSS)
+		Secure:   utils.IsProduction(),    // Forces HTTPS transmission
+		SameSite: http.SameSiteStrictMode, // Blocks Cross-Site Request Forgery (CSRF)
 	})
 
 	resp := map[string]string{
@@ -171,8 +171,8 @@ func (s *Server) SignInFlowComplete(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Fetch the public validation key bytes from your KeyManager cache
-		pubKeyBytes, found := s.KeyManager.GetKey(kid)
-		if !found {
+		pubKeyBytes, err := s.KeyManager.GetVerifyingKey(r.Context(), kid)
+		if err != nil {
 			return nil, errors.New("invalid or rotated key id")
 		}
 
@@ -232,6 +232,10 @@ func (s *Server) SignInFlowComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sessionId := claims.SessionId
+	sessionSignature := s.kms.SignSession([]byte(sessionId))
+	sessionCookieValue := fmt.Sprintf("%s.%s", sessionId, sessionSignature)
+
 	// 7. Clear the temporary authentication sign-in cookie by overriding it with an expired time
 	http.SetCookie(w, &http.Cookie{
 		Name:     "signInToken",
@@ -239,7 +243,18 @@ func (s *Server) SignInFlowComplete(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   s.Config.IsProduction == true,
+		Secure:   utils.IsProduction(),
+		SameSite: http.SameSiteStrictMode,
+	})
+
+	// 8. Set the session cookie with the signed session ID and signature
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    sessionCookieValue,
+		Path:     "/",
+		Expires:  time.Now().Add(15 * time.Hour),
+		HttpOnly: true,
+		Secure:   utils.IsProduction(),
 		SameSite: http.SameSiteStrictMode,
 	})
 

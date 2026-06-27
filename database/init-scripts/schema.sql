@@ -29,8 +29,8 @@ create table user_roles (
 
 create table session_keys (
     id uuid primary key,
-    private_key bytea not null,
-    public_key bytea not null,
+    private_key bytea not null CHECK (octet_length(private_key) = 64),
+    public_key bytea not null CHECK (octet_length(public_key) = 32),
     created_at timestamp default current_timestamp
 );
 
