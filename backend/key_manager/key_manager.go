@@ -3,13 +3,13 @@ package keymanager
 import (
 	"context"
 	"encoding/base64"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"andreabarchietto.it/password_manager/backend/kms"
+	"andreabarchietto.it/password_manager/backend/utils"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
 	"github.com/valkey-io/valkey-go"
@@ -29,9 +29,8 @@ type KeyManager struct {
 	localKms      *kms.LocalKMS
 	db            *pgxpool.Pool
 	vk            valkey.Client
-	prefix        string
 	sf            singleflight.Group
-	valkeyCacheId int64
+	valkeyCacheId []byte
 }
 
 var (
@@ -47,11 +46,11 @@ var (
 
 // InitKeyManager initializes the singleton instance
 func InitKeyManager(localKms *kms.LocalKMS, db *pgxpool.Pool, vk valkey.Client) (*KeyManager, error) {
-	ctx := context.Background()
-	backendId, err := vk.Do(ctx, vk.B().Incr().Key("kms_backend_id").Build()).AsInt64()
+	backendId, err := utils.GenerateBackendId()
 	if err != nil {
 		return nil, err
 	}
+
 	once.Do(func() {
 		instance = &KeyManager{
 			localKms:      localKms,
@@ -63,17 +62,16 @@ func InitKeyManager(localKms *kms.LocalKMS, db *pgxpool.Pool, vk valkey.Client) 
 	return instance, nil
 }
 
-func (km *KeyManager) getValkeyCacheId() string {
-	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, uint64(km.valkeyCacheId))
-	return base64.RawURLEncoding.EncodeToString(buf)
+func (km *KeyManager) getKmsCacheId() string {
+	base64encodedId := base64.RawURLEncoding.EncodeToString(km.valkeyCacheId)
+	return fmt.Sprintf("kms:%s", base64encodedId)
 }
 
 // GetSigningKey fetches the current active signing private key
 func (km *KeyManager) GetSigningKey(ctx context.Context) (ulid.ULID, []byte, error) {
 	// 1. Try querying Valkey
 	res, err, _ := km.sf.Do("pull_signing_key", func() (any, error) {
-		val, err := km.vk.Do(ctx, km.vk.B().Hget().Key(km.prefix).Field("signing_key").Build()).ToString()
+		val, err := km.vk.Do(ctx, km.vk.B().Hget().Key(km.getKmsCacheId()).Field("signing_key").Build()).ToString()
 		if err != nil {
 			return nil, err
 		}
@@ -90,12 +88,6 @@ func (km *KeyManager) GetSigningKey(ctx context.Context) (ulid.ULID, []byte, err
 	if err == nil {
 		decrypted := res.([]byte)
 		return ulid.ULID(decrypted[:16]), decrypted[16:], nil
-	}
-	if valkey.IsValkeyNil(err) {
-		return ulid.Zero, nil, KeyNotFound
-	}
-	if !errors.Is(err, BrokenCacheData) {
-		return ulid.Zero, nil, err
 	}
 
 	// 2. Cache miss: Fetch from Postgres, refresh Valkey, and return row[1]
@@ -121,26 +113,25 @@ func (km *KeyManager) GetSigningKey(ctx context.Context) (ulid.ULID, []byte, err
 // GetVerifyingKey fetches the verification public key matching the given kid
 func (km *KeyManager) GetVerifyingKey(ctx context.Context, kid string) ([]byte, error) {
 	// 1. Try querying Valkey
-	sfKey := fmt.Sprintf("pull_verifying_key:%s", kid)
-	res, err, _ := km.sf.Do(sfKey, func() (any, error) {
-		val, err := km.vk.Do(ctx, km.vk.B().Hget().Key(km.prefix).Field(kid).Build()).ToString()
+	res, err, _ := km.sf.Do("pull_verifying_key", func() (any, error) {
+		values, err := km.vk.Do(ctx, km.vk.B().Hgetall().Key(km.getKmsCacheId()).Build()).AsMap()
 		if err != nil {
 			return nil, err
 		}
-		decrypted, err := km.localKms.DecryptCacheData([]byte(val))
-		if err != nil {
-			return nil, BrokenCacheData
-		}
-		return decrypted, nil
+		return values, nil
 	})
 	if err == nil {
-		return res.([]byte), nil
-	}
-	if valkey.IsValkeyNil(err) {
-		return nil, KeyNotFound
-	}
-	if !errors.Is(err, BrokenCacheData) {
-		return nil, err
+		data := res.(map[string]valkey.ValkeyMessage)
+		if len(data) > 0 {
+			if value, exists := data[kid]; exists {
+				data, err := value.AsBytes()
+				if err == nil {
+					return km.localKms.DecryptCacheData(data)
+				}
+			} else {
+				return nil, KeyNotFound
+			}
+		}
 	}
 
 	// 2. Cache miss: Fetch from Postgres, refresh Valkey
@@ -190,7 +181,7 @@ func (km *KeyManager) refreshCache(ctx context.Context) ([]KeyRow, error) {
 		rows = append(rows, r)
 	}
 
-	if len(rows) < 2 {
+	if len(rows) < 3 {
 		return nil, fmt.Errorf("insufficient keys in database: expected at least 2, got %d", len(rows))
 	}
 
@@ -221,7 +212,7 @@ func (km *KeyManager) refreshCache(ctx context.Context) ([]KeyRow, error) {
 	}
 
 	// Use valkey-go's multi-argument Hset variant via slice expansion
-	hsetCmd := km.vk.B().Hset().Key(km.prefix).FieldValue().
+	hsetCmd := km.vk.B().Hset().Key(km.getKmsCacheId()).FieldValue().
 		FieldValue(fieldsAndValues[0], fieldsAndValues[1]).
 		FieldValue(fieldsAndValues[2], fieldsAndValues[3]).
 		FieldValue(fieldsAndValues[4], fieldsAndValues[5]).
@@ -231,7 +222,7 @@ func (km *KeyManager) refreshCache(ctx context.Context) ([]KeyRow, error) {
 	}
 
 	// Set expiration to 10 minutes
-	expireCmd := km.vk.B().Expire().Key(km.prefix).Seconds(600).Build()
+	expireCmd := km.vk.B().Expire().Key(km.getKmsCacheId()).Seconds(600).Build()
 	if err := km.vk.Do(ctx, expireCmd).Error(); err != nil {
 		return nil, fmt.Errorf("failed to set valkey expiration: %w", err)
 	}

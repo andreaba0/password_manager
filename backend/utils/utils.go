@@ -31,14 +31,11 @@ func GenerateSaltFromEmail(email string) []byte {
 }
 
 func GenerateNonce() ([]byte, error) {
-	// generate random 128 bit
-	nonce := make([]byte, 16)
-	_, err := rand.Read(nonce)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate secure nonce: %w", err)
-	}
+	return GenerateRandomBytes(16)
+}
 
-	return nonce, nil
+func GenerateBackendId() ([]byte, error) {
+	return GenerateRandomBytes(20)
 }
 
 func GenerateSessionID() ([]byte, error) {
@@ -52,4 +49,13 @@ func GenerateSessionID() ([]byte, error) {
 
 func IsProduction() bool {
 	return os.Getenv("ENV") == "production"
+}
+
+func GenerateRandomBytes(n int) ([]byte, error) {
+	bytes := make([]byte, n)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate random bytes: %w", err)
+	}
+	return bytes, nil
 }
