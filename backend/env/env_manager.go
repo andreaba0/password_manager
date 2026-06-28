@@ -8,17 +8,18 @@ import (
 type VariableName string
 
 var (
-	PostgresHost       VariableName = "POSTGRES_HOST"
-	PostgresPort       VariableName = "POSTGRES_PORT"
-	PostgresUser       VariableName = "POSTGRES_USER"
-	PostgresPassword   VariableName = "POSTGRES_PASSWORD"
-	PostgresDatabase   VariableName = "POSTGRES_DATABASE"
-	ValkeyHost         VariableName = "VALKEY_HOST"
-	ValkeyPort         VariableName = "VALKEY_PORT"
-	CacheStorageSecret VariableName = "CACHE_STORAGE_SECRET"
-	SessionSecret      VariableName = "SESSION_SECRET"
-	Env                VariableName = "ENV"
-	SecureCookie       VariableName = "SECURE_COOKIE"
+	PostgresHost             VariableName = "POSTGRES_HOST"
+	PostgresPort             VariableName = "POSTGRES_PORT"
+	PostgresUser             VariableName = "POSTGRES_USER"
+	PostgresPassword         VariableName = "POSTGRES_PASSWORD"
+	PostgresDatabase         VariableName = "POSTGRES_DATABASE"
+	ValkeyHost               VariableName = "VALKEY_HOST"
+	ValkeyPort               VariableName = "VALKEY_PORT"
+	CacheStorageSecret       VariableName = "CACHE_STORAGE_SECRET"
+	SessionSecret            VariableName = "SESSION_SECRET"
+	SecureCookie             VariableName = "SECURE_COOKIE"
+	SaltSecret               VariableName = "SALT_SECRET"
+	PostgresEncryptionSecret VariableName = "POSTGRES_ENCRYPTION_SECRET"
 )
 
 var RequiredVariables = []VariableName{
@@ -31,8 +32,9 @@ var RequiredVariables = []VariableName{
 	ValkeyPort,
 	CacheStorageSecret,
 	SessionSecret,
-	Env,
 	SecureCookie,
+	SaltSecret,
+	PostgresEncryptionSecret,
 }
 
 type EnvManager struct {

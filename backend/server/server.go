@@ -68,7 +68,7 @@ func (s *Server) SignInFlowBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil && errors.Is(err, pgx.ErrNoRows) {
-		salt = utils.GenerateSaltFromEmail(req.Email)
+		salt = s.kms.SignSalt([]byte(req.Email))
 	}
 
 	id, key, err := s.keyManager.GetSigningKey(r.Context())

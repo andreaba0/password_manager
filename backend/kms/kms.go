@@ -12,18 +12,28 @@ import (
 type LocalKMS struct {
 	kmsStorageSecret []byte
 	sessionSecret    []byte
+	postgresSecret   []byte
+	saltSecret       []byte
 }
 
-func NewLocalKMS(kmsStorageSecret, sessionSecret []byte) *LocalKMS {
+func NewLocalKMS(kmsStorageSecret, sessionSecret, postgresSecret, saltSecret []byte) *LocalKMS {
 	return &LocalKMS{
 		kmsStorageSecret: kmsStorageSecret,
 		sessionSecret:    sessionSecret,
+		postgresSecret:   postgresSecret,
+		saltSecret:       saltSecret,
 	}
 }
 
 func (c *LocalKMS) SignSession(session []byte) []byte {
 	mac := hmac.New(sha256.New, c.sessionSecret)
 	mac.Write(session)
+	return mac.Sum(nil)
+}
+
+func (c *LocalKMS) SignSalt(salt []byte) []byte {
+	mac := hmac.New(sha256.New, c.saltSecret)
+	mac.Write(salt)
 	return mac.Sum(nil)
 }
 
@@ -34,7 +44,15 @@ func (c *LocalKMS) VerifySession(session, signature []byte) bool {
 }
 
 func (c *LocalKMS) EncryptCacheData(data []byte) ([]byte, error) {
-	block, err := aes.NewCipher(c.kmsStorageSecret)
+	return c.aesGcmEncryption(data, c.kmsStorageSecret)
+}
+
+func (c *LocalKMS) EncryptPostgresData(data []byte) ([]byte, error) {
+	return c.aesGcmEncryption(data, c.postgresSecret)
+}
+
+func (c *LocalKMS) aesGcmEncryption(data, key []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +72,15 @@ func (c *LocalKMS) EncryptCacheData(data []byte) ([]byte, error) {
 }
 
 func (c *LocalKMS) DecryptCacheData(ciphertext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(c.kmsStorageSecret)
+	return c.aesGcmDecryption(ciphertext, c.kmsStorageSecret)
+}
+
+func (c *LocalKMS) DecryptPostgresData(ciphertext []byte) ([]byte, error) {
+	return c.aesGcmDecryption(ciphertext, c.postgresSecret)
+}
+
+func (c *LocalKMS) aesGcmDecryption(ciphertext, key []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}

@@ -45,7 +45,12 @@ func main() {
 	}
 	defer valkeyPool.Close()
 
-	kms := kms.NewLocalKMS([]byte(envManager.Get(env.CacheStorageSecret)), []byte(envManager.Get(env.SessionSecret)))
+	kms := kms.NewLocalKMS(
+		[]byte(envManager.Get(env.CacheStorageSecret)),
+		[]byte(envManager.Get(env.SessionSecret)),
+		[]byte(envManager.Get(env.PostgresEncryptionSecret)),
+		[]byte(envManager.Get(env.SaltSecret)),
+	)
 
 	km, err := keymanager.InitKeyManager(kms, pool, valkeyPool)
 	if err != nil {

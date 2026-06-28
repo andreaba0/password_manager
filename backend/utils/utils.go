@@ -1,14 +1,11 @@
 package utils
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 )
 
 func DecodeRequest(r *http.Request, v any) error {
@@ -17,17 +14,6 @@ func DecodeRequest(r *http.Request, v any) error {
 		return err
 	}
 	return json.Unmarshal(body, v)
-}
-
-func GenerateSaltFromEmail(email string) []byte {
-	// generate salt from hmac-sha256(email, secret from env)
-	secret := os.Getenv("SALT_SECRET")
-	if secret == "" {
-		panic("SALT_SECRET environment variable is not set")
-	}
-	h := hmac.New(sha256.New, []byte(secret))
-	h.Write([]byte(email))
-	return h.Sum(nil)
 }
 
 func GenerateNonce() ([]byte, error) {
@@ -54,4 +40,8 @@ func GenerateRandomBytes(n int) ([]byte, error) {
 		return nil, fmt.Errorf("failed to generate random bytes: %w", err)
 	}
 	return bytes, nil
+}
+
+func GenerateSalt() ([]byte, error) {
+	return GenerateRandomBytes(32)
 }
