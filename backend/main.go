@@ -7,8 +7,9 @@ import (
 	"os"
 	"time"
 
-	"andreabarchietto.it/password_manager/backend/config"
+	"andreabarchietto.it/password_manager/backend/env"
 	keymanager "andreabarchietto.it/password_manager/backend/key_manager"
+	"andreabarchietto.it/password_manager/backend/kms"
 	"andreabarchietto.it/password_manager/backend/server"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valkey-io/valkey-go"
@@ -20,26 +21,12 @@ const (
 )
 
 func main() {
-	dbUser := os.Getenv("DB_USER")
-	dbPass := os.Getenv("DB_PASSWORD")
-	dbHost := os.Getenv("DB_HOST")
-	dbPort := os.Getenv("DB_PORT")
-	dbName := os.Getenv("DB_NAME")
-
-	valkeyHost := os.Getenv("VALKEY_HOST")
-	valkeyPort := os.Getenv("VALKEY_PORT")
-
-	cfg := config.Config{
-		IsProduction: true,
-	}
-
-	if _, ok := os.LookupEnv("APP_ENV"); ok && os.Getenv("APP_ENV") != "PROD" {
-		cfg.IsProduction = false
-	}
+	envManager := env.NewEnvManager()
+	envManager.LoadEnv(env.RequiredVariables)
 
 	ctx := context.Background()
 	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&pool_max_conns=20",
-		dbUser, dbPass, dbHost, dbPort, dbName,
+		envManager.Get(env.PostgresUser), envManager.Get(env.PostgresPassword), envManager.Get(env.PostgresHost), envManager.Get(env.PostgresPort), envManager.Get(env.PostgresDatabase),
 	)
 
 	// 1. Connect to Postgres with Retry
@@ -51,16 +38,22 @@ func main() {
 	defer pool.Close()
 
 	// 2. Connect to Valkey with Retry
-	valkeyPool, err := connectValkey(valkeyHost, valkeyPort)
+	valkeyPool, err := connectValkey(envManager.Get(env.ValkeyHost), envManager.Get(env.ValkeyPort))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Valkey connection failed after retries: %v\n", err)
 		os.Exit(1)
 	}
 	defer valkeyPool.Close()
 
-	km := keymanager.KeyManager{}
+	kms := kms.NewLocalKMS([]byte(envManager.Get(env.CacheStorageSecret)), []byte(envManager.Get(env.SessionSecret)))
 
-	s := &server.Server{DB: pool, ValkeyDB: valkeyPool, KeyManager: &km, Config: &cfg}
+	km, err := keymanager.InitKeyManager(kms, pool, valkeyPool)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ KeyManager initialization failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	s := server.NewServer(pool, valkeyPool, km, kms, envManager)
 
 	http.HandleFunc("/api/signin-flow/begin", s.SignInFlowBegin)
 	http.HandleFunc("/api/signin-flow/complete", s.SignInFlowComplete)

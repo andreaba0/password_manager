@@ -72,22 +72,14 @@ func (km *KeyManager) GetSigningKey(ctx context.Context) (ulid.ULID, []byte, err
 	// 1. Try querying Valkey
 	res, err, _ := km.sf.Do("pull_signing_key", func() (any, error) {
 		val, err := km.vk.Do(ctx, km.vk.B().Hget().Key(km.getKmsCacheId()).Field("signing_key").Build()).ToString()
-		if err != nil {
-			return nil, err
-		}
-		// Found in Valkey, decrypt and return private key (skip first 16 bytes uuid)
-		decrypted, err := km.localKms.DecryptCacheData([]byte(val))
-		if err != nil {
-			return nil, BrokenCacheData
-		}
-		if len(decrypted) < 16+32 {
-			return nil, BrokenCacheData
-		}
-		return decrypted, nil
+		return val, err
 	})
 	if err == nil {
-		decrypted := res.([]byte)
-		return ulid.ULID(decrypted[:16]), decrypted[16:], nil
+		val := res.([]byte)
+		decrypted, err := km.localKms.DecryptCacheData(val)
+		if err == nil {
+			return ulid.ULID(decrypted[:16]), decrypted[16:], nil
+		}
 	}
 
 	// 2. Cache miss: Fetch from Postgres, refresh Valkey, and return row[1]

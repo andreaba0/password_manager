@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"andreabarchietto.it/password_manager/backend/env"
 	keymanager "andreabarchietto.it/password_manager/backend/key_manager"
 	"andreabarchietto.it/password_manager/backend/kms"
 	"andreabarchietto.it/password_manager/backend/utils"
@@ -19,10 +20,11 @@ import (
 )
 
 type Server struct {
-	DB         *pgxpool.Pool
-	ValkeyDB   valkey.Client
-	KeyManager *keymanager.KeyManager
+	db         *pgxpool.Pool
+	valkeyDB   valkey.Client
+	keyManager *keymanager.KeyManager
 	kms        *kms.LocalKMS
+	envManager *env.EnvManager
 }
 
 type SignInFlowBeginRequest struct {
@@ -38,6 +40,10 @@ type SignInFlowJsonWebToken struct {
 	Salt      string `json:"salt"`
 	SessionId string `json:"sessionId"`
 	jwt.RegisteredClaims
+}
+
+func NewServer(db *pgxpool.Pool, valkeyDB valkey.Client, km *keymanager.KeyManager, kms *kms.LocalKMS, envManager *env.EnvManager) *Server {
+	return &Server{db: db, valkeyDB: valkeyDB, keyManager: km, kms: kms, envManager: envManager}
 }
 
 func (s *Server) SignInFlowBegin(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +62,7 @@ func (s *Server) SignInFlowBegin(w http.ResponseWriter, r *http.Request) {
 	// Query database to get salt for user by email
 	// If user is not found, generate a salt from hmac-sha256(email, secret from env)
 	var salt []byte
-	err = s.DB.QueryRow(r.Context(), "SELECT salt FROM users WHERE email = $1", req.Email).Scan(&salt)
+	err = s.db.QueryRow(r.Context(), "SELECT salt FROM users WHERE email = $1", req.Email).Scan(&salt)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -65,7 +71,7 @@ func (s *Server) SignInFlowBegin(w http.ResponseWriter, r *http.Request) {
 		salt = utils.GenerateSaltFromEmail(req.Email)
 	}
 
-	id, key, err := s.KeyManager.GetSigningKey(r.Context())
+	id, key, err := s.keyManager.GetSigningKey(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -112,9 +118,9 @@ func (s *Server) SignInFlowBegin(w http.ResponseWriter, r *http.Request) {
 		Value:    tokenString,
 		Path:     "/",
 		Expires:  time.Now().Add(20 * time.Second),
-		HttpOnly: true,                    // Prevents JavaScript access (Mitigates XSS)
-		Secure:   utils.IsProduction(),    // Forces HTTPS transmission
-		SameSite: http.SameSiteStrictMode, // Blocks Cross-Site Request Forgery (CSRF)
+		HttpOnly: true,                                   // Prevents JavaScript access (Mitigates XSS)
+		Secure:   s.envManager.GetBool(env.SecureCookie), // Forces HTTPS transmission
+		SameSite: http.SameSiteStrictMode,                // Blocks Cross-Site Request Forgery (CSRF)
 	})
 
 	resp := map[string]string{
@@ -171,7 +177,7 @@ func (s *Server) SignInFlowComplete(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Fetch the public validation key bytes from your KeyManager cache
-		pubKeyBytes, err := s.KeyManager.GetVerifyingKey(r.Context(), kid)
+		pubKeyBytes, err := s.keyManager.GetVerifyingKey(r.Context(), kid)
 		if err != nil {
 			return nil, errors.New("invalid or rotated key id")
 		}
@@ -194,7 +200,7 @@ func (s *Server) SignInFlowComplete(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Query the Database for the User's master Public Key
 	var userPubKeyHex string
-	err = s.DB.QueryRow(r.Context(), "SELECT public_key FROM users WHERE email = $1", claims.Email).Scan(&userPubKeyHex)
+	err = s.db.QueryRow(r.Context(), "SELECT public_key FROM users WHERE email = $1", claims.Email).Scan(&userPubKeyHex)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		http.Error(w, "Database failure", http.StatusInternalServerError)
 		return
@@ -222,8 +228,8 @@ func (s *Server) SignInFlowComplete(w http.ResponseWriter, r *http.Request) {
 	// Key: session:<sessionIdHex>, Value: email string (or JSON metadata)
 	valkeyKey := fmt.Sprintf("session:%s", claims.SessionId)
 
-	cmd := s.ValkeyDB.B().Set().Key(valkeyKey).Value(claims.Email).Nx().Ex(15 * 3600).Build()
-	err = s.ValkeyDB.Do(r.Context(), cmd).Error()
+	cmd := s.valkeyDB.B().Set().Key(valkeyKey).Value(claims.Email).Nx().Ex(15 * 3600).Build()
+	err = s.valkeyDB.Do(r.Context(), cmd).Error()
 	if err != nil && valkey.IsValkeyNil(err) {
 		http.Error(w, "Sesion already established", http.StatusConflict)
 	}
@@ -243,7 +249,7 @@ func (s *Server) SignInFlowComplete(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   utils.IsProduction(),
+		Secure:   s.envManager.GetBool(env.SecureCookie),
 		SameSite: http.SameSiteStrictMode,
 	})
 
@@ -254,7 +260,7 @@ func (s *Server) SignInFlowComplete(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		Expires:  time.Now().Add(15 * time.Hour),
 		HttpOnly: true,
-		Secure:   utils.IsProduction(),
+		Secure:   s.envManager.GetBool(env.SecureCookie),
 		SameSite: http.SameSiteStrictMode,
 	})
 

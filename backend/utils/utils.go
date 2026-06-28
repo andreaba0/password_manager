@@ -47,10 +47,6 @@ func GenerateSessionID() ([]byte, error) {
 	return sessionID, nil
 }
 
-func IsProduction() bool {
-	return os.Getenv("ENV") == "production"
-}
-
 func GenerateRandomBytes(n int) ([]byte, error) {
 	bytes := make([]byte, n)
 	_, err := rand.Read(bytes)
