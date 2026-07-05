@@ -42,3 +42,15 @@ create table credential_blobs (
     e_dek bytea not null,
     created_at timestamp default current_timestamp
 );
+
+create table signup_request_logs (
+    id bigserial primary key,
+    token text not null,
+    created_at timestamp default current_timestamp
+);
+
+create table fake_salt_secrets (
+    id bigserial primary key,
+    secret bytea not null,
+    created_at timestamp default current_timestamp
+);
