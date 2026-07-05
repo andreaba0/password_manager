@@ -164,7 +164,7 @@ func (s *Server) SignInFlowComplete(w http.ResponseWriter, r *http.Request) {
 
 	// 3. Parse and Verify the JWT using the KeyManager public keys
 	var claims SignInFlowJsonWebToken
-	token, err := jwt.ParseWithClaims(tokenStr, &claims, func(t *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &claims, func(t *jwt.Token) (any, error) {
 		// Ensure the signing method matches what you generated in step 1
 		if _, ok := t.Method.(*jwt.SigningMethodEd25519); !ok && t.Method.Alg() != jwt.SigningMethodEdDSA.Alg() {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
