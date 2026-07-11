@@ -8,29 +8,21 @@ import (
 type VariableName string
 
 var (
-	PostgresHost             VariableName = "POSTGRES_HOST"
-	PostgresPort             VariableName = "POSTGRES_PORT"
 	PostgresUser             VariableName = "POSTGRES_USER"
 	PostgresPassword         VariableName = "POSTGRES_PASSWORD"
 	PostgresDatabase         VariableName = "POSTGRES_DATABASE"
-	ValkeyHost               VariableName = "VALKEY_HOST"
-	ValkeyPort               VariableName = "VALKEY_PORT"
 	CacheStorageSecret       VariableName = "CACHE_STORAGE_SECRET"
 	SessionSecret            VariableName = "SESSION_SECRET"
 	SecureCookie             VariableName = "SECURE_COOKIE"
 	SaltSecret               VariableName = "SALT_SECRET"
 	PostgresEncryptionSecret VariableName = "POSTGRES_ENCRYPTION_SECRET"
-	PostgresAlias            VariableName = "POSTGRES_ALIAS"
 	Network                  VariableName = "NETWORK"
 	PostgresImage            VariableName = "POSTGRES_IMAGE"
 	ValkeyImage              VariableName = "VALKEY_IMAGE"
-	PostgresExposedPort      VariableName = "POSTGRES_EXPOSED_PORT"
 	BackendImage             VariableName = "BACKEND_IMAGE"
-	BackendExposedPort       VariableName = "BACKEND_EXPOSED_PORT"
-	BackendHost              VariableName = "BACKEND_HOST"
-	BackendPort              VariableName = "BACKEND_PORT"
-	ValkeyAlias              VariableName = "VALKEY_ALIAS"
-	ValkeyExposedPort        VariableName = "VALKEY_EXPOSED_PORT"
+	PostgresContainerPort    VariableName = "POSTGRES_CONTAINER_PORT"
+	ValkeyContainerPort      VariableName = "VALKEY_CONTAINER_PORT"
+	BackendContainerPort     VariableName = "BACKEND_CONTAINER_PORT"
 )
 
 var RequiredServiceVariables = []VariableName{
@@ -38,33 +30,26 @@ var RequiredServiceVariables = []VariableName{
 }
 
 var RequiredPostgresVariables = []VariableName{
-	PostgresHost,
-	PostgresPort,
 	PostgresUser,
-	PostgresAlias,
 	PostgresPassword,
 	PostgresDatabase,
 	PostgresImage,
-	PostgresExposedPort,
+	PostgresContainerPort,
 }
 
 var RequiredValkeyVariables = []VariableName{
-	ValkeyHost,
-	ValkeyPort,
 	ValkeyImage,
-	ValkeyExposedPort,
-	ValkeyAlias,
+	ValkeyContainerPort,
 }
 
 var RequiredBackendVariables = []VariableName{
 	BackendImage,
-	BackendExposedPort,
-	BackendHost,
-	BackendPort,
 	CacheStorageSecret,
 	SaltSecret,
 	SecureCookie,
 	PostgresEncryptionSecret,
+	BackendContainerPort,
+	SessionSecret,
 }
 
 type EnvManager struct {

@@ -19,9 +19,9 @@ type Service struct {
 func main() {
 	// Define the services based on your directory structure
 	services := []Service{
-		{Name: "backend", DockerfilePath: "../../backend/Dockerfile", ContextPath: "../../backend"},
-		{Name: "cache", DockerfilePath: "../../cache/Dockerfile", ContextPath: "../../cache"},
-		{Name: "database", DockerfilePath: "../../database/Dockerfile", ContextPath: "../../database"},
+		{Name: "backend", DockerfilePath: "../backend/Dockerfile", ContextPath: "../backend"},
+		{Name: "cache", DockerfilePath: "../cache/Dockerfile", ContextPath: "../cache"},
+		{Name: "database", DockerfilePath: "../database/Dockerfile", ContextPath: "../database"},
 	}
 
 	reader := bufio.NewReader(os.Stdin)
